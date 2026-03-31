@@ -153,7 +153,6 @@ bool EventManager::recordEvents(const QString &devicePath, const QString &output
                     snprintf(buf, sizeof(buf), "[%ld.%06ld] %04x %04x %08x\n", 
                              (long)ev.time.tv_sec, (long)ev.time.tv_usec, ev.type, ev.code, ev.value);
                     outFile.write(buf);
-                    outFile.flush();
 #else
                     out.writeRawData((const char*)&ev, sizeof(ev));
 #endif
@@ -234,15 +233,17 @@ bool EventManager::playEvents(const QString &inputPath, const QString &deviceOve
         return false;
     }
 
+#if USE_PLAINTEXT_FORMAT
+    // Probe the file to count events
+    long totalEvents = 0;
+    while (!in.atEnd()) {
+        if (!in.readLine().trimmed().isEmpty()) totalEvents++;
+    }
+#else
     qint64 startPos = inFile.pos();
 
     // Probe the file to count events
     long totalEvents = 0;
-#if USE_PLAINTEXT_FORMAT
-    while (!in.atEnd()) {
-        if (!in.readLine().isEmpty()) totalEvents++;
-    }
-#else
     qint64 remainingSize = inFile.size() - startPos;
     if (remainingSize % sizeof(struct input_event) != 0) {
         std::cerr << "Warning: File size may be corrupted (not a multiple of input_event size)." << std::endl;
@@ -284,9 +285,11 @@ bool EventManager::playEvents(const QString &inputPath, const QString &deviceOve
             std::cout << "=== Loop " << currentLoop << " / " << loopCount << " ===" << std::endl;
         }
 
-        inFile.seek(startPos); // Reset to start of events
 #if USE_PLAINTEXT_FORMAT
-        in.seek(startPos);
+        in.seek(0);
+        in.readLine(); in.readLine(); in.readLine(); in.readLine(); // skip headers
+#else
+        inFile.seek(startPos); // Reset to start of events
 #endif
 
         struct input_event ev;
