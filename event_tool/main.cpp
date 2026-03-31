@@ -11,7 +11,7 @@
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
-    QCoreApplication::setApplicationName("cmdtool");
+    QCoreApplication::setApplicationName("Event Tool");
     QCoreApplication::setApplicationVersion("1.0");
 
     QCommandLineParser parser;
