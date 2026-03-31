@@ -145,53 +145,69 @@ play_events() {
             print_info "=== 回放第 ${CURRENT_ROUND}/${PLAY_COUNT} 轮 ==="
         fi
 
-        PREV_TIMESTAMP=""
         EVENT_INDEX=0
 
-        # 逐行读取并回放事件
-        grep "^\[" "$INPUT_FILE" | while IFS= read -r line; do
+        # 预处理解析：使用单个 awk 进程消除所有子进程(sed/awk/fork)的巨大开销
+        awk -v speed="$SPEED" '
+        function hex2dec(h,   i, l, c, v, n) {
+            h = tolower(h)
+            sub(/^0x/, "", h)
+            l = length(h)
+            n = 0
+            for (i = 1; i <= l; i++) {
+                c = substr(h, i, 1)
+                v = index("0123456789abcdef", c) - 1
+                n = n * 16 + v
+            }
+            if (n > 2147483647) n = n - 4294967296
+            return n
+        }
+        BEGIN { prev_sec = -1; prev_usec = -1 }
+        /^\[/ {
+            idx_close = index($0, "]")
+            if (idx_close > 0) {
+                ts_str = substr($0, 2, idx_close - 2)
+                gsub(/[ \t]+/, "", ts_str)
+                split(ts_str, tparts, ".")
+                sec = tparts[1] + 0
+                usec = tparts[2] + 0
+            } else { next }
+
+            type_hex = $(NF-2)
+            code_hex = $(NF-1)
+            val_hex = $NF
+            if (type_hex == "" || code_hex == "" || val_hex == "") next
+
+            type_dec = hex2dec(type_hex)
+            code_dec = hex2dec(code_hex)
+            val_dec  = hex2dec(val_hex)
+
+            delay = 0
+            if (prev_sec != -1) {
+                d_sec = sec - prev_sec
+                d_usec = usec - prev_usec
+                if (d_usec < 0) { d_sec -= 1; d_usec += 1000000 }
+                delay = (d_sec + d_usec / 1000000.0) / speed
+                if (delay < 0) delay = 0
+            }
+            prev_sec = sec
+            prev_usec = usec
+
+            if (delay > 0.0005) {
+                printf "%.6f %d %d %d\n", delay, type_dec, code_dec, val_dec
+            } else {
+                printf "0 %d %d %d\n", type_dec, code_dec, val_dec
+            }
+        }' "$INPUT_FILE" | while read -r DELAY TYPE_DEC CODE_DEC VALUE_DEC; do
             if [ "$PLAYING" -ne 1 ]; then
                 break
             fi
 
-            # 解析行: [ timestamp] device_path: type code value
-            # 格式示例: [     123.456789] /dev/input/event2: 0003 0039 00000001
-            TIMESTAMP=$(echo "$line" | sed 's/\[\s*//' | sed 's/\].*//' | tr -d ' ')
-            # 使用 NF 倒数获取字段，兼容带不带返回设备路径的 getevent 格式
-            TYPE_HEX=$(echo "$line" | awk '{print $(NF-2)}')
-            CODE_HEX=$(echo "$line" | awk '{print $(NF-1)}')
-            VALUE_HEX=$(echo "$line" | awk '{print $NF}')
-
-            # 跳过解析失败的行
-            if [ -z "$TYPE_HEX" ] || [ -z "$CODE_HEX" ] || [ -z "$VALUE_HEX" ]; then
-                continue
+            if [ "$DELAY" != "0" ]; then
+                sleep "$DELAY"
             fi
 
-            # 计算延时
-            if [ -n "$PREV_TIMESTAMP" ]; then
-                DELAY=$(awk "BEGIN {
-                    d = ${TIMESTAMP} - ${PREV_TIMESTAMP};
-                    if (d < 0) d = 0;
-                    d = d / ${SPEED};
-                    printf \"%.6f\", d
-                }")
-
-                # 仅在延时大于 0.0005 秒时 sleep
-                SHOULD_SLEEP=$(awk "BEGIN { print (${DELAY} > 0.0005) ? 1 : 0 }")
-                if [ "$SHOULD_SLEEP" -eq 1 ]; then
-                    sleep "$DELAY"
-                fi
-            fi
-            PREV_TIMESTAMP="$TIMESTAMP"
-
-            # Hex 转十进制
-            TYPE_DEC=$(hex2dec "$TYPE_HEX")
-            CODE_DEC=$(hex2dec "$CODE_HEX")
-            VALUE_DEC=$(hex2dec "$VALUE_HEX")
-
-            # 发送事件
             sendevent "$PLAY_DEVICE" "$TYPE_DEC" "$CODE_DEC" "$VALUE_DEC"
-
             EVENT_INDEX=$((EVENT_INDEX + 1))
         done
 
