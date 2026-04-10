@@ -4,25 +4,39 @@
 
 根据开发环境与性能要求的不同，工程提供两套不同的实现方案：**Shell 版 (scripts)** 和 **Qt5/C++ 核心版 (event_tool)**。
 
+### 演示
+
+![Diagram](scripts/demo.gif)
+
 ---
 
 ## 目录结构
 
 ### 1. [`event_tool/` (推荐): 基于 Qt5 的 C++ 方案](./event_tool/)
+
 **特点**：实时性最高、防越界数据完整性极佳、无需配置额外解析工具。
 该方案不依赖图形化模块（Headless Qt Core），以 C++ 形式直接对 `/dev/input/event*` 挂载点进行最底层的 `struct input_event` IO 定时收发控制。
+
 * **特性一：明文/二进制加密混合**：只需修改宏 `USE_PLAINTEXT_FORMAT` 即可在“便于检查的文本格式”与“体积微小、性能极佳的十六进制/二进制格式”之间灵活切换。
+
 * **特性二：高度实时**：利用高精度时间轮询控制，保证两次手势之间的停顿、拖拽的微秒级别原汁原味还原。
+
 * **编译要求**：具有 QMake 和 GCC 编译器环境的任意 Linux 主机。
-> 👉 [点击查看 event_tool 详细文档](./event_tool/README.md)
+  
+  > 👉 [点击查看 event_tool 详细文档](./event_tool/README.md)
 
 ### 2. [`scripts/`: 基于 Shell 的脚本方案](./scripts/)
+
 **特点**：部署成本最低、极度轻量化。
 该方案通过编写精简的 `.sh` 脚本统筹调用 Android / Linux 内置的 `getevent` 和自定义编译的 `sendevent` C 程序。
+
 * **特性一：灵活度强**：无需庞大的编译环境（例如 Qt），只要设备上能够运行最基础的 POSIX Shell 就能跑。
+
 * **特性二：完全可见性**：录制生成的是文本文件，方便自动化测试工具接入检查。
+
 * **运行要求**：需要 `getevent` 环境或能编译底下的 `src` C 代码。
-> 👉 此目录下的 `event_recorder.sh` 和 `event_player.sh` 为主要入口。运行 `sh event_recorder.sh -h` 可查看对应帮助信息。
+  
+  > 👉 此目录下的 `event_recorder.sh` 和 `event_player.sh` 为主要入口。运行 `sh event_recorder.sh -h` 可查看对应帮助信息。
 
 ---
 
